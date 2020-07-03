@@ -17,7 +17,7 @@ Created on Thu Apr 23 19:11:25 2020
 from ot.bregman import sinkhorn_knopp
 from scipy.special import logsumexp
 import matplotlib.pyplot as plt
-from BUtils import Utils
+from ..BUtils import Utils
 from . import Helpers
 import numpy as np
 import scipy

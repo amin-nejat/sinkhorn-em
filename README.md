@@ -1,5 +1,5 @@
 # Python Package
-Codes for the NeurIPS submission of the paper: Sinkhorn EM: An Expectation-Maximization algorithm based on entropic optimal transport.
+Codes for the MICCAI submission of the paper: Probabilistic Segmentation and Labeling of C. elegans Neurons
 
 # Installation
 Some pre-requisite packages must already be installed on your system all of which are included in Anaconda (pickle, numpy, scipy, matplotlib, sklearn, pytorch, pyro).
