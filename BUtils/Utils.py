@@ -8,7 +8,9 @@ import numpy as np
 import torch
 
 
-def obs2image(X1,I1,scale=1):
+def obs2image(X1,I1,scale=1,min_subtract=False):
+    if len(X1) == 0:
+        return
     
     if torch.is_tensor(X1):
         X1 = X1.data.numpy()
@@ -18,7 +20,12 @@ def obs2image(X1,I1,scale=1):
     
     X1 = X1.astype(int)
     
-    X1[X1 < 0] = 0
+    if min_subtract:
+        X1 = X1-X1.min(0)
+    else:
+        X1[X1 < 0] = 0
+    
+        
     max_coor = X1.max(0)
     
     shape = np.append(max_coor+1,I1.shape[1])
@@ -33,3 +40,18 @@ def obs2image(X1,I1,scale=1):
     recon[ind] = I/I.max(); recon = recon.reshape(shape)
     
     return recon
+
+
+def image2obs(data,thresh=2,scale=1):
+    C = data.shape[3]
+    
+    n_pixels = np.prod(data.shape[0:3])
+    X_in = np.array(np.where(np.ones(data.shape[0:3]))).T
+    I_in = data[:,:,:,:C].reshape((n_pixels,C))
+    X_in = X_in[I_in.mean(1) > thresh,:]
+    I_in = I_in[I_in.mean(1) > thresh,:]
+    
+    
+    obs = np.concatenate((X_in*scale,I_in[:,:C]),1)
+    
+    return obs
