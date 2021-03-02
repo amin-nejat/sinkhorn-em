@@ -117,8 +117,11 @@ class BayesianGMM(object):
 
             A = scipy.linalg.sqrtm(np.linalg.inv(obj.sigma[:,:,k].squeeze()))
             
-            prior_ll = - 0.5*(obj.mu[k,:]-obj.prior['mu'][k,:])@np.linalg.inv(obj.prior['sigma'][:,:,k])@(obj.mu[k,:]-obj.prior['mu'][k,:]).T \
-                - ((obj.D)/2)*np.log(2*np.pi) - 0.5*np.log(np.linalg.det(obj.prior['sigma'][:,:,k]))
+            if obj.prior is None:
+                prior_ll = 0
+            else:
+                prior_ll = - 0.5*(obj.mu[k,:]-obj.prior['mu'][k,:])@np.linalg.inv(obj.prior['sigma'][:,:,k])@(obj.mu[k,:]-obj.prior['mu'][k,:]).T \
+                    - ((obj.D)/2)*np.log(2*np.pi) - 0.5*np.log(np.linalg.det(obj.prior['sigma'][:,:,k]))
             
             obj.ll[:,k] = -0.5*np.nansum((A@difs.T)**2,0) -0.5*np.log(np.linalg.det(obj.sigma[:,:,k]).squeeze()) -((obj.D)/2)*np.log(2*np.pi)
             obj.lp[:,k] = np.log(obj.pi[k])+obj.ll[:,k]+prior_ll
@@ -131,7 +134,11 @@ class BayesianGMM(object):
             covar = 2*np.eye(obj.C)
             A = scipy.linalg.sqrtm(np.linalg.inv(covar))
             
-            prior_ll = -np.log(obj.u_range).sum()
+            if obj.prior is None:
+                prior_ll = 0
+            else:
+                prior_ll = -np.log(obj.u_range).sum()
+                
             obj.ll[:,k] = -0.5*np.nansum((A@difs.T)**2,0) -0.5*np.log(np.linalg.det(covar)) -(obj.C/2)*np.log(2*np.pi)
             obj.lp[:,k] = np.log(obj.pi[k])+obj.ll[:,k]+prior_ll
             obj.LE[:,k] = np.log(obj.pi[k])+obj.ll[:,k]
@@ -152,9 +159,15 @@ class BayesianGMM(object):
         n_gamma = np.nansum(obj.gamma[obj.train_indices,:],0)
         mu_tmp = obj.mu.copy()
         for k in range(obj.K):
-            covz = obj.sigma[:,:,k]@np.linalg.inv(obj.prior['sigma'][:,:,k])
+            if obj.prior is None:
+                covz = 0
+            else:
+                covz = obj.sigma[:,:,k]@np.linalg.inv(obj.prior['sigma'][:,:,k])
             A = n_gamma[k]*np.eye(obj.D) + covz
-            B = n_gamma_nu[k,:].T + covz@obj.prior['mu'][k,:].T
+            if obj.prior is None:
+                B = n_gamma_nu[k,:].T
+            else:
+                B = n_gamma_nu[k,:].T + covz@obj.prior['mu'][k,:].T
             mu_tmp[k,:] = np.linalg.inv(A)@B
         
 #        obj.mu[:,:3] = mu_tmp[:,:3].copy()
@@ -276,7 +289,7 @@ class BayesianGMM(object):
         print(np.array(ranks))
         return np.where(np.array(ranks) < top_k)[0].shape[0]/len(ranks)
     
-    def __init__(obj,atlas,data,sigma_factor=1,noise_props=np.array([.25,.5,.2]),
+    def __init__(obj,data,atlas=None,K=0,sigma_factor=1,noise_props=np.array([.25,.5,.2]),
                  noise_colors=np.array([[0,1,3],[0,4,0],[0,0,1]]),random_init=False):
         obj.converged = -1
         obj.le = np.array([[],[]]).T
@@ -293,22 +306,26 @@ class BayesianGMM(object):
         
         obj.X = data
         
-        obj.prior = copy.deepcopy(atlas)
-        obj.prior['sigma'] = obj.prior['sigma']/10
+        if atlas is None:
+            obj.prior = None
+            obj.K = K
+        else:
+            obj.prior = copy.deepcopy(atlas)
+            obj.K = obj.prior['mu'].shape[0]
+#            obj.prior['sigma'] = obj.prior['sigma']/10
         
         if random_init:
-            obj.mu = data[np.random.randint(data.shape[0], size=obj.prior['mu'].shape[0]), :]
+            obj.mu = data[np.random.randint(data.shape[0], size=obj.K), :]
         else:
             obj.mu = obj.prior['mu'].copy()
         
-        obj.D = obj.prior['mu'].shape[1]
-        obj.K = obj.prior['mu'].shape[0]
+        obj.D = data.shape[1]
         obj.C = obj.D-3
         obj.N = obj.X.shape[0]
         obj.B = len(obj.noise_props)
         
         obj.pi = np.hstack(((1-obj.noise_props.sum(0))*np.ones((obj.K))/obj.K, obj.noise_props))
-        obj.sigma = 10*sigma_factor*np.tile(np.eye(obj.D)[:,:,np.newaxis],(1,1,obj.K))
+        obj.sigma = sigma_factor*np.tile(np.eye(obj.D)[:,:,np.newaxis],(1,1,obj.K))
 #        obj.sigma[3:,3:,:] = .5*obj.sigma[3:,3:,:]
         
         obj.u_range = obj.X.max(0)[:3]-obj.X.min(0)[:3]
@@ -327,11 +344,15 @@ class BayesianGMM(object):
         P = obj.mu[:,:3]*scale
         plt.cla()
         plt.imshow(factor*data[:,:,:,[0,1,2]].max(2)/data.max())
-        plt.scatter(P[:,1],P[:,0],s=10*sz,edgecolors='w',marker='o',facecolors=cl)
+        plt.scatter(P[:,1],P[:,0],s=20*sz,edgecolors='w',marker='o',facecolors=cl)
         
-        cl = obj.prior['mu'][:,3:]; cl[cl < 0] = 0; cl = cl/cl.max()
-        PR = obj.prior['mu'][:,:3]*scale
-        plt.scatter(PR[:,1],PR[:,0],s=10*sz,edgecolors='w',marker='x',facecolors=cl)
+        if obj.prior is not None:
+            cl = obj.prior['mu'][:,3:]; cl[cl < 0] = 0; cl = cl/cl.max()
+            PR = obj.prior['mu'][:,:3]*scale
+            plt.scatter(PR[:,1],PR[:,0],s=10*sz,edgecolors='w',marker='x',facecolors=cl)
+            
+            for i in range(len(obj.prior['names'])):
+                plt.annotate(obj.prior['names'][i],(P[i,1],P[i,0]),c='r')
         
         plt.title(titlestr)
         plt.axis('off')
@@ -339,9 +360,6 @@ class BayesianGMM(object):
         scalebar = ScaleBar(microns,'um')
         plt.gca().add_artist(scalebar)
 
-        
-        for i in range(len(obj.prior['names'])):
-            plt.annotate(obj.prior['names'][i],(P[i,1],P[i,0]),c='r')
         
         if save:
             plt.gcf().set_size_inches(data.shape[1]/20,data.shape[0]/20)
@@ -381,7 +399,7 @@ class BayesianGMM(object):
         else:
             min_xy = ((mu[:,[1,0]].min(0)-margin)*scale[:,[1,0]]).squeeze()
             max_xy = ((mu[:,[1,0]].max(0)+margin)*scale[:,[1,0]]).squeeze()
-                
+            
         rect = patches.Rectangle((min_xy[1],min_xy[0]),max_xy[1]-min_xy[1],max_xy[0]-min_xy[0],linewidth=1,edgecolor='r',facecolor='none')
 
         if colored:
@@ -391,9 +409,14 @@ class BayesianGMM(object):
                 a = Utils.obs2image(obj.X[:,[1,0,2]], obj.gamma, scale)
             
             b = a[:,:,:,ind]@(obj.mu[ind,3:6]/obj.mu[:,3:6].max(0))[np.newaxis,np.newaxis,:,:]
-            b_n = a[:,:,:,obj.K:obj.K+3]@(obj.noise_colors[:,:3]/obj.noise_colors[:,:3].max(0))[np.newaxis,np.newaxis,:,:]
-            plt.subplot(312)
+            if obj.B > 0:
+                b_n = a[:,:,:,obj.K:obj.K+obj.B]@(obj.noise_colors[:,:3]/obj.noise_colors[:,:3].max(0))[np.newaxis,np.newaxis,:,:]
             
+            if obj.B > 0:    
+                plt.subplot(312)
+            else:
+                plt.subplot(212)
+                
             plt.imshow(b.max(2))
             plt.xlim([min_xy[1],max_xy[1]])
             plt.ylim([min_xy[0],max_xy[0]])
@@ -402,18 +425,22 @@ class BayesianGMM(object):
             plt.axis('off')
             plt.grid('on')
             
-            plt.subplot(313)
-            
-            plt.imshow(b_n.max(2))
-            plt.xlim([min_xy[1],max_xy[1]])
-            plt.ylim([min_xy[0],max_xy[0]])
+            if obj.B > 0:    
+                plt.subplot(313)
+                
+                plt.imshow(b_n.max(2))
+                plt.xlim([min_xy[1],max_xy[1]])
+                plt.ylim([min_xy[0],max_xy[0]])
             
                 
-            plt.title('Noise Components')
-            plt.axis('off')
-            plt.grid('on')
+                plt.title('Noise Components')
+                plt.axis('off')
+                plt.grid('on')
             
-            plt.subplot(311)
+            if obj.B > 0:    
+                plt.subplot(311)
+            else:
+                plt.subplot(211)
             
             if obj.X[:,0].max() < obj.X[:,1].max():
                 a = Utils.obs2image(obj.X[:,:3], obj.X[:,3:6], scale)
@@ -434,7 +461,10 @@ class BayesianGMM(object):
             
             plt.title(titlestr)
             
-            plt.gcf().set_size_inches(a.shape[1]/50,3*a.shape[0]/50)
+            if obj.B > 0:
+                plt.gcf().set_size_inches(a.shape[1]/50,3*a.shape[0]/50)
+            else:
+                plt.gcf().set_size_inches(a.shape[1]/5,2*a.shape[0]/5)
                 
         else:
             if obj.X[:,0].max() > obj.X[:,1].max():
@@ -450,14 +480,16 @@ class BayesianGMM(object):
                 if obj.X[:,0].max() > obj.X[:,1].max():
                     plt.scatter(obj.mu[ind[k],1]*scale[0,1],obj.mu[ind[k],0]*scale[0,0],s=10,c='r')
                 else:
-                    plt.scatter(obj.mu[ind[k],0]*scale[0,0],obj.mu[ind[k],1]*scale[0,1],s=10,c='r')                    
-                plt.title(obj.prior['names'][ind[k]])
+                    plt.scatter(obj.mu[ind[k],0]*scale[0,0],obj.mu[ind[k],1]*scale[0,1],s=10,c='r')
+                if obj.prior is not None:
+                    plt.title(obj.prior['names'][ind[k]])
                 plt.xlim([min_xy[1],max_xy[1]])
                 plt.ylim([min_xy[0],max_xy[0]])
-                if obj.X[:,0].max() > obj.X[:,1].max():
-                    plt.scatter(gt['mu'][k,1]*scale[0,1],gt['mu'][k,0]*scale[0,0],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
-                else:
-                    plt.scatter(gt['mu'][k,0]*scale[0,0],gt['mu'][k,1]*scale[0,1],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
+                if gt is not None:
+                    if obj.X[:,0].max() > obj.X[:,1].max():
+                        plt.scatter(gt['mu'][k,1]*scale[0,1],gt['mu'][k,0]*scale[0,0],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
+                    else:
+                        plt.scatter(gt['mu'][k,0]*scale[0,0],gt['mu'][k,1]*scale[0,1],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
             plt.subplot(1,len(ind)+2,1)
             
             if obj.X[:,0].max() > obj.X[:,1].max():
@@ -481,10 +513,11 @@ class BayesianGMM(object):
             plt.xlim([min_xy[1],max_xy[1]])
             plt.ylim([min_xy[0],max_xy[0]])
             
-            if obj.X[:,0].max() > obj.X[:,1].max():
-                plt.scatter(gt['mu'][:,1]*scale[0,1],gt['mu'][:,0]*scale[0,0],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
-            else:
-                plt.scatter(gt['mu'][:,0]*scale[0,0],gt['mu'][:,1]*scale[0,1],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
+            if gt is not None:
+                if obj.X[:,0].max() > obj.X[:,1].max():
+                    plt.scatter(gt['mu'][:,1]*scale[0,1],gt['mu'][:,0]*scale[0,0],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
+                else:
+                    plt.scatter(gt['mu'][:,0]*scale[0,0],gt['mu'][:,1]*scale[0,1],s=200,edgecolor='g',marker='o',facecolors='none',linewidth=3)
             cb_ax = plt.gcf().add_axes([0.92, 0.3, 0.01, 0.4])
             plt.colorbar(im, cax=cb_ax)
             
